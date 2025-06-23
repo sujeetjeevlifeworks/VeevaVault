@@ -19,4 +19,7 @@ public class AwsS3Config {
 
     @Value("${aws.s3.bucket}")
     private String bucketName;
+
+    @Value("${aws.athena.output-s3}")
+    private String athenaOutputS3;
 }

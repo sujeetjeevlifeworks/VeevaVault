@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+
 @RestController
 @RequestMapping("/api/vault")
 public class VaultApiController {
@@ -28,7 +30,7 @@ public class VaultApiController {
     }
 
     @GetMapping("/download")
-    public ResponseEntity<byte[]> downloadFile(@RequestParam String sessionId, @RequestParam String fileName) {
+    public ResponseEntity<byte[]> downloadFile(@RequestParam String sessionId, @RequestParam String fileName) throws IOException {
         byte[] data = vaultApiService.downloadFile(sessionId, fileName);
 
         // Convert file part name like 56006-20250617-0000-F.001 → 56006-20250617-0000-F.tar.gz
