@@ -38,6 +38,7 @@ public class S3StorageService {
     @Getter
     private final String bucketName;
     private static final Logger logger = LoggerFactory.getLogger(S3StorageService.class);
+
     @Autowired
     public S3StorageService(AwsS3Config config) {
         String accessKey = decrypt(config.getEncryptedAccessKey());
@@ -78,8 +79,8 @@ public class S3StorageService {
 
     public void uploadToS3(byte[] fileData, String fileName, String extractType) {
         String loadDate = LocalDate.now().toString();
-        String s3Key = String.format("vault-data/extract_type=%s/load_date=%s/%s", extractType, loadDate, fileName);
-
+        //String s3Key = String.format("vault-data/extract_type=%s/load_date=%s/%s", extractType, loadDate, fileName);
+        String s3Key = "objects/" + fileName;
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(s3Key)
@@ -125,11 +126,11 @@ public class S3StorageService {
 
             while ((entry = tarIn.getNextTarEntry()) != null) {
                 if (entry.isDirectory()) {
-                    continue; // skip directories
+                    continue;
                 }
 
                 File outFile = new File(tempDir, entry.getName());
-                outFile.getParentFile().mkdirs(); // ✅ Ensure folder structure
+                outFile.getParentFile().mkdirs();
                 System.out.println("📁 Extracting: " + outFile.getAbsolutePath());
 
                 try (OutputStream outStream = new BufferedOutputStream(new FileOutputStream(outFile))) {
@@ -159,4 +160,53 @@ public class S3StorageService {
         return extractedFiles;
     }
 
+    public static File unzipGzipFile(byte[] compressedData, String outputFileName) {
+        try {
+            File tempDir = Files.createTempDirectory("unzipped-gzip").toFile();
+            File outputFile = new File(tempDir, outputFileName.replace(".gz", ""));
+
+            try (GZIPInputStream gzipIn = new GZIPInputStream(new ByteArrayInputStream(compressedData));
+                 FileOutputStream outStream = new FileOutputStream(outputFile)) {
+                IOUtils.copy(gzipIn, outStream);
+            }
+
+            System.out.println("✅ Unzipped file: " + outputFile.getAbsolutePath());
+            return outputFile;
+
+        } catch (IOException e) {
+            throw new RuntimeException("❌ Failed to unzip GZIP file: " + outputFileName, e);
+        }
+    }
+
+    public static List<File> extractAllToDirectory(byte[] fileData, File targetDir) {
+        List<File> extractedFiles = new ArrayList<>();
+        try (
+                ByteArrayInputStream byteStream = new ByteArrayInputStream(fileData);
+                BufferedInputStream bufferedIn = new BufferedInputStream(byteStream);
+                GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(bufferedIn);
+                TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)
+        ) {
+            TarArchiveEntry entry;
+            while ((entry = tarIn.getNextTarEntry()) != null) {
+                if (entry.isDirectory()) continue;
+
+                File outFile = new File(targetDir, entry.getName());
+                outFile.getParentFile().mkdirs();
+
+                try (OutputStream outStream = new BufferedOutputStream(new FileOutputStream(outFile))) {
+                    IOUtils.copy(tarIn, outStream);
+                }
+
+                System.out.println("📁 Extracted: " + outFile.getAbsolutePath());
+                extractedFiles.add(outFile);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("❌ Failed to extract TAR.GZ properly", e);
+        }
+
+        return extractedFiles;
+    }
+
+
 }
+

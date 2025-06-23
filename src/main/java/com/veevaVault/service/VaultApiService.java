@@ -9,15 +9,15 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class VaultApiService {
 
     private final RestTemplate restTemplate;
-
     private final String BASE_URL = "https://partnersi-jeevlifeworks-safety.veevavault.com/api/v25.1";
-
 
     @Autowired
     private AthenaService athenaService;
@@ -74,49 +74,128 @@ public class VaultApiService {
         return restTemplate.exchange(url, HttpMethod.GET, entity, String.class).getBody();
     }
 
-   public byte[] downloadFile(String sessionId, String filePartName) throws IOException {
-       String url = BASE_URL + "/services/directdata/files/" + filePartName;
+    /*public byte[] downloadFile(String sessionId, String filePartName) throws IOException {
+        String url = BASE_URL + "/services/directdata/files/" + filePartName;
 
-       HttpHeaders headers = new HttpHeaders();
-       headers.set("Authorization", sessionId);
-       headers.setAccept(List.of());
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", sessionId);
+        headers.setAccept(List.of());
 
-       HttpEntity<Void> entity = new HttpEntity<>(headers);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-       ResponseEntity<byte[]> response = restTemplate.exchange(
-               url,
-               HttpMethod.GET,
-               entity,
-               byte[].class
-       );
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                byte[].class
+        );
 
-       byte[] fileData = response.getBody();
-       String extractType = inferExtractType(filePartName);
+        byte[] fileData = response.getBody();
+        String extractType = inferExtractType(filePartName);
+        String downloadFileName = filePartName.replace(".001", ".tar.gz");
+        File desktopFile = new File("C:\\Users\\SUJEET\\Desktop\\veeva vault data", downloadFileName); // ✅ this will save only in veeva vault data
 
-       // ✅ Step 1: Upload original .001 archive to S3 (renamed as .tar.gz)
-       String archiveFileName = filePartName.replace(".001", ".tar.gz");
-       s3StorageService.uploadToS3(fileData, archiveFileName, extractType);
+        if (desktopFile.exists()) {
+            boolean deleted = desktopFile.delete();
+            if (deleted) {
+                System.out.println("🧹 Deleted extra Desktop copy: " + desktopFile.getAbsolutePath());
+            }
+        }
 
-       // ✅ Step 2: Extract all files with full folder structure
-       List<File> extractedFiles = S3StorageService.extractAllFromBinary(fileData, filePartName);
+        // ✅ Step 2: Save .tar.gz to the target directory
+        File localTarFile = new File("C:\\Users\\SUJEET\\Desktop\\veeva vault data", downloadFileName);
+        Files.write(localTarFile.toPath(), fileData);
+        System.out.println("✅ Saved to local: " + localTarFile.getAbsolutePath());
 
-       // ✅ Step 3: Upload each extracted file to S3
-       for (File extracted : extractedFiles) {
-           // Determine relative path within the temp dir, preserving TAR structure
-           File tempDir = extracted.getParentFile().getParentFile(); // parent of 'Object', 'Metadata', etc.
-           String relativePath = extracted.getAbsolutePath()
-                   .substring(tempDir.getAbsolutePath().length() + 1)
-                   .replace(File.separatorChar, '/'); // Normalize for S3
+        // ✅ Step 3: Extract contents to a subfolder
+        File extractDir = new File("C:\\Users\\SUJEET\\Desktop\\veeva vault data", filePartName.replace(".001", ""));
+        if (!extractDir.exists()) extractDir.mkdirs();
 
-           byte[] extractedBytes = java.nio.file.Files.readAllBytes(extracted.toPath());
-           s3StorageService.uploadToS3(extractedBytes, relativePath, extractType);
+        List<File> extractedFiles = S3StorageService.extractAllToDirectory(fileData, extractDir);
 
-       }
+        // ✅ Step 4: Upload all extracted files to S3 preserving folder structure
+        Files.walk(extractDir.toPath())
+                .filter(Files::isRegularFile)
+                .forEach(path -> {
+                    try {
+                        File file = path.toFile();
+                        String relativePath = extractDir.toPath().relativize(path).toString().replace(File.separatorChar, '/');
+                        byte[] extractedBytes = Files.readAllBytes(path);
+                        System.out.println("Uploading to S3: " + relativePath);
+                        s3StorageService.uploadToS3(extractedBytes, relativePath, extractType);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
 
-       athenaService.createOrUpdateTable(extractType);
 
-       return fileData;
-   }
+        // ✅ Step 5: Trigger Athena table update
+        athenaService.createOrUpdateTable(extractType);
+
+        return fileData;
+    }*/
+    public byte[] downloadFile(String sessionId, String filePartName) throws IOException {
+        String url = BASE_URL + "/services/directdata/files/" + filePartName;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", sessionId);
+        headers.setAccept(List.of());
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                byte[].class
+        );
+
+        byte[] fileData = response.getBody();
+        String extractType = inferExtractType(filePartName);
+       // String downloadFileName = filePartName.replace(".001", ".tar.gz");
+        String downloadFileName = filePartName.replaceAll("\\.\\d{3}$", ".tar.gz");
+
+
+        File downloadDir = new File("C:\\Users\\SUJEET\\Desktop\\veeva vault data");
+        if (!downloadDir.exists()) downloadDir.mkdirs();
+
+        File localTarFile = new File(downloadDir, downloadFileName);
+        if (localTarFile.exists()) {
+            boolean deleted = localTarFile.delete();
+            if (deleted) {
+                System.out.println("🧹 Deleted old copy: " + localTarFile.getAbsolutePath());
+            }
+        }
+
+        Files.write(localTarFile.toPath(), fileData);
+        System.out.println("✅ Saved to local: " + localTarFile.getAbsolutePath());
+
+        // ✅ Step 3: Extract contents to subfolder
+        File extractDir = new File(downloadDir, filePartName.replace(".001", ""));
+        if (!extractDir.exists()) extractDir.mkdirs();
+
+        List<File> extractedFiles = S3StorageService.extractAllToDirectory(fileData, extractDir);
+
+        // ✅ Step 4: Recursively collect all files for upload
+        List<File> allExtractedFiles = new ArrayList<>();
+        collectAllFilesRecursively(extractDir, allExtractedFiles);
+
+        for (File extracted : allExtractedFiles) {
+            String relativePath = extracted.getAbsolutePath()
+                    .substring(extractDir.getAbsolutePath().length() + 1)
+                    .replace(File.separatorChar, '/');
+
+            System.out.println("Uploading to S3: " + relativePath);
+            byte[] extractedBytes = Files.readAllBytes(extracted.toPath());
+            s3StorageService.uploadToS3(extractedBytes, relativePath, extractType);
+        }
+
+        // ✅ Step 5: Trigger Athena table update
+        athenaService.createOrUpdateTable(extractType);
+
+        return fileData;
+    }
+
 
     private String inferExtractType(String filePartName) {
         if (filePartName.contains("-F")) return "full_directdata";
@@ -124,4 +203,18 @@ public class VaultApiService {
         if (filePartName.contains("-L")) return "log_directdata";
         return "unknown";
     }
+
+    private void collectAllFilesRecursively(File dir, List<File> fileList) {
+        if (dir.isFile()) {
+            fileList.add(dir);
+        } else {
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    collectAllFilesRecursively(child, fileList);
+                }
+            }
+        }
+    }
+
 }

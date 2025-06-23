@@ -27,7 +27,7 @@ public class AthenaService {
         this.outputLocation = awsS3Config.getAthenaOutputS3();
     }
 
-    @PostConstruct
+   /* @PostConstruct
     public void init() {
         AwsBasicCredentials credentials = AwsBasicCredentials.create(
                 S3StorageService.decrypt(awsS3Config.getEncryptedAccessKey()),
@@ -38,7 +38,7 @@ public class AthenaService {
                 .region(Region.of(awsS3Config.getRegion()))
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .build();
-    }
+    }*/
 
     public void createOrUpdateTable(String extractType) {
         String loadDate = LocalDate.now().toString();
