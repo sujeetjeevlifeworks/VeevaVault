@@ -55,5 +55,4 @@ public class VaultApiController {
                     .body("❌ Failed: " + e.getMessage());
         }
     }
-
 }

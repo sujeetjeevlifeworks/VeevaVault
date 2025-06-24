@@ -22,4 +22,10 @@ public class AwsS3Config {
 
     @Value("${aws.athena.output-s3}")
     private String athenaOutputS3;
+
+    private String glueServiceRoleArn;
+
+    public String getGlueServiceRoleArn() {
+        return glueServiceRoleArn;
+    }
 }

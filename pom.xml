@@ -75,6 +75,12 @@
 			<optional>true</optional>
 		</dependency>
 
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>glue</artifactId>
+			<version>2.20.0</version> <!-- Use latest version -->
+		</dependency>
+
 		<!-- Spring Boot Testing -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
