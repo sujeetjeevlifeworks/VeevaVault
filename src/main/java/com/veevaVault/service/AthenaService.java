@@ -1,7 +1,6 @@
 package com.veevaVault.service;
 
 import com.veevaVault.config.AwsS3Config;
-import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -12,14 +11,6 @@ import software.amazon.awssdk.services.glue.GlueClient;
 import software.amazon.awssdk.services.glue.model.*;
 import software.amazon.awssdk.services.glue.model.GetDatabaseRequest;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.S3Object;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Service
 public class AthenaService {
@@ -97,9 +88,9 @@ public class AthenaService {
             );
 
             executeAthenaQuery(query);
-            System.out.println("✅ Athena table created: " + tableName);
+            System.out.println(" Athena table created: " + tableName);
         } else {
-            System.out.println("ℹ️ Table already exists: " + tableName);
+            System.out.println(" Table already exists: " + tableName);
         }
     }
 
