@@ -37,8 +37,6 @@ public class VaultApiService {
     }
 
     public String authenticate(String username, String password) {
-        String methodName = "authenticate";
-        System.out.printf("[%s.%s] Authenticating user: %s%n", CLASS_NAME, methodName, username);
 
         String authUrl = BASE_URL + "/auth";
         HttpHeaders headers = new HttpHeaders();
@@ -53,13 +51,17 @@ public class VaultApiService {
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(authUrl, request, String.class);
-            System.out.printf("[%s.%s] ✅ Authentication successful%n", CLASS_NAME, methodName);
             return response.getBody();
         } catch (Exception e) {
-            System.err.printf("[%s.%s] ❌ Authentication failed: %s%n", CLASS_NAME, methodName, e.getMessage());
             throw new RuntimeException("Authentication failed!", e);
         }
     }
+    private String deriveFolderName(String fileName) {
+        return fileName.replace(".csv", "")
+                .replaceAll("[^a-zA-Z0-9]", "")
+                .toLowerCase();
+    }
+
 
     public String getFiles(String sessionId, String extractType, String startTime, String stopTime) {
         String methodName = "getFiles";
@@ -193,7 +195,6 @@ public class VaultApiService {
                     extractedFiles.add(manifestPath);
                 }
             } else {
-                System.err.printf("[%s.%s] ❌ Manifest file missing%n", CLASS_NAME, methodName);
             }
 
             // Check metadata_full.csv
@@ -204,48 +205,33 @@ public class VaultApiService {
                     extractedFiles.add(metadataPath);
                 }
             } else {
-                System.err.printf("[%s.%s] ❌ Metadata file missing%n", CLASS_NAME, methodName);
             }
         } catch (IOException e) {
-            System.err.printf("[%s.%s] ❌ Error checking key files: %s%n", CLASS_NAME, methodName, e.getMessage());
         }
     }
 
     private void uploadToS3(List<Path> files, String extractDirName) throws IOException {
-        String methodName = "uploadToS3";
-        System.out.printf("[%s.%s] Uploading %d files to S3 for: %s%n",
-                CLASS_NAME, methodName, files.size(), extractDirName);
-
-        // First upload key files
         uploadKeyFiles(files, extractDirName);
 
-        // Then upload other CSV files
         for (Path file : files) {
             try {
                 if (!Files.exists(file)) {
-                    System.err.printf("[%s.%s] ⚠️ File not found: %s%n", CLASS_NAME, methodName, file);
                     continue;
                 }
 
                 String fileName = file.getFileName().toString();
                 long size = Files.size(file);
 
-                // Skip if already uploaded as key file or not CSV
-                if (fileName.equals("manifest.csv") || fileName.equals("metadata_full.csv") ||
-                        !fileName.endsWith(".csv") || size <= 0) {
-                    continue;
-                }
-
-                System.out.printf("[%s.%s] 🔍 Processing file: %s (Size: %d bytes)%n",
-                        CLASS_NAME, methodName, fileName, size);
 
                 byte[] content = Files.readAllBytes(file);
-                s3StorageService.uploadToS3(content, fileName, extractDirName);
+              //  String folderName = deriveFolderName(fileName);
+                String folderName = deriveFolderName(fileName);
+               // s3StorageService.uploadToS3(content, fileName, "objects/" + folderName);
+                s3StorageService.uploadToS3(content, folderName + "/" + fileName, "objects");
 
-                System.out.printf("[%s.%s] 📤 Uploaded to S3: %s%n", CLASS_NAME, methodName, fileName);
+
             } catch (IOException e) {
-                System.err.printf("[%s.%s] ❌ Failed to upload %s: %s%n",
-                        CLASS_NAME, methodName, file.getFileName(), e.getMessage());
+
             }
         }
 
@@ -276,7 +262,14 @@ public class VaultApiService {
 
                 if (size > 0) {
                     byte[] content = Files.readAllBytes(file);
-                    s3StorageService.uploadToS3(content, fileName, extractDirName);
+
+
+                    String folderName = deriveFolderName(fileName);
+                    s3StorageService.uploadToS3(content, folderName + "/" + fileName, "objects");
+
+
+
+
                     System.out.printf("[%s.%s] 📤 Uploaded key file to S3: %s%n", CLASS_NAME, methodName, fileName);
                 } else {
                     System.err.printf("[%s.%s] ⚠️ Empty key file: %s%n", CLASS_NAME, methodName, fileName);
