@@ -21,7 +21,7 @@ public class VaultApiService {
 
     private final RestTemplate restTemplate;
     private final String BASE_URL = "https://partnersi-jeevlifeworks-safety.veevavault.com/api/v25.1";
-    private final Path BASE_DOWNLOAD_DIR = Paths.get("C:\\Users\\SUJEET\\Desktop\\veeva vault data");
+    private final Path BASE_DOWNLOAD_DIR = Paths.get("C:\\Users\\Administrator\\Desktop\\veeva vault");
 
     @Autowired
     private AthenaService athenaService;
@@ -81,6 +81,11 @@ public class VaultApiService {
     public byte[] downloadFile(String sessionId, String filePartName) throws IOException {
         String url = BASE_URL + "/services/directdata/files/" + filePartName;
         byte[] fileData = downloadWithRetries(url, sessionId);
+        System.out.println("Starting download...");
+        System.out.println("Merging files...");
+        System.out.println("Extracting archive...");
+        System.out.println("Uploading to S3...");
+        System.out.println("Done.");
 
         if (!isValidArchive(fileData)) {
             throw new IOException("Invalid archive file");
@@ -95,6 +100,10 @@ public class VaultApiService {
 
         String extractDirName = cleanFileName.replace(".tar.gz", "");
         Path extractDir = BASE_DOWNLOAD_DIR.resolve(extractDirName);
+        if (Files.exists(extractDir)) {
+            deleteDirectoryRecursively(extractDir.toFile());
+        }
+        Files.createDirectories(extractDir);
         Files.createDirectories(extractDir);
 
         List<Path> extractedFiles = extractArchive(fileData, extractDir);
@@ -102,57 +111,84 @@ public class VaultApiService {
         return fileData;
     }
 
+    private void deleteDirectoryRecursively(File dir) {
+        File[] allContents = dir.listFiles();
+        if (allContents != null) {
+            for (File file : allContents) {
+                deleteDirectoryRecursively(file);
+            }
+        }
+        dir.delete();
+    }
 
 
 //new method is working for log and incrimental
-    private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOException {
-        List<Path> extractedFiles = new ArrayList<>();
-        boolean extractionFailed = false;
+private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOException {
+    List<Path> extractedFiles = new ArrayList<>();
+    boolean extractionFailed = false;
 
-        try (TarArchiveInputStream tarIn = new TarArchiveInputStream(
-                new GzipCompressorInputStream(new ByteArrayInputStream(fileData)))) {
+    try (
+            BufferedInputStream bis = new BufferedInputStream(new ByteArrayInputStream(fileData), 32768); // 32KB buffer
+            GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(bis, true);
+            TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)
+    ) {
+        TarArchiveEntry entry;
+        while ((entry = tarIn.getNextTarEntry()) != null) {
+            if (entry.isDirectory()) {
+                File dir = new File(extractDir.toFile(), entry.getName());
+                dir.mkdirs();
+                continue;
+            }
 
-            TarArchiveEntry entry;
-            while ((entry = tarIn.getNextTarEntry()) != null) {
-                if (!entry.isDirectory()) {
-                    String cleanName = getCleanFilename(entry.getName());
-                    Path outputFile = extractDir.resolve(cleanName);
-                    Files.createDirectories(outputFile.getParent());
-                    Files.copy(tarIn, outputFile, StandardCopyOption.REPLACE_EXISTING);
 
-                    // 🔽 Decompress .gz files if present inside tar
-                    if (outputFile.toString().endsWith(".gz")) {
-                        Path decompressed = Paths.get(outputFile.toString().replace(".gz", ""));
-                        try (GZIPInputStream gzipIn = new GZIPInputStream(Files.newInputStream(outputFile));
-                             OutputStream out = Files.newOutputStream(decompressed)) {
-                            gzipIn.transferTo(out);
-                        }
-                        Files.delete(outputFile); // Optional: delete .gz
-                        outputFile = decompressed;
-                    }
+            Path normalizedPath = extractDir.resolve(entry.getName()).normalize();
+            if (!normalizedPath.startsWith(extractDir)) {
+                throw new IOException("Entry is outside target dir: " + entry.getName());
+            }
+            File outFile = normalizedPath.toFile();
 
-                    extractedFiles.add(outputFile);
+            outFile.getParentFile().mkdirs();
+
+            try (BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(outFile))) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = tarIn.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
                 }
             }
-        } catch (Exception e) {
-            extractionFailed = true;
-        }
 
-        checkKeyFiles(extractDir, extractedFiles);
-
-        if (extractionFailed) {
-            try {
-                List<Path> recoveredFiles = recoverFiles(fileData, extractDir);
-                for (Path recovered : recoveredFiles) {
-                    if (!extractedFiles.contains(recovered)) {
-                        extractedFiles.add(recovered);
-                    }
+            // Decompress any internal .gz file
+            if (outFile.getName().endsWith(".gz")) {
+                File decompressed = new File(outFile.getAbsolutePath().replace(".gz", ""));
+                try (GZIPInputStream gzipFileIn = new GZIPInputStream(new FileInputStream(outFile));
+                     OutputStream fileOut = new FileOutputStream(decompressed)) {
+                    gzipFileIn.transferTo(fileOut);
                 }
-            } catch (Exception ignored) {}
+                outFile.delete();
+                extractedFiles.add(decompressed.toPath());
+            } else {
+                extractedFiles.add(outFile.toPath());
+            }
         }
-
-        return extractedFiles;
+    } catch (Exception e) {
+        extractionFailed = true;
     }
+
+    checkKeyFiles(extractDir, extractedFiles);
+
+    if (extractionFailed) {
+        try {
+            List<Path> recovered = recoverFiles(fileData, extractDir);
+            for (Path p : recovered) {
+                if (!extractedFiles.contains(p)) {
+                    extractedFiles.add(p);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    return extractedFiles;
+}
 
 
 
@@ -174,18 +210,26 @@ public class VaultApiService {
 
         for (Path file : files) {
             try {
-                if (!Files.exists(file)) {
-                    continue;
-                }
-                String fileName = file.getFileName().toString();
-                byte[] content = Files.readAllBytes(file);
-                String folderName = deriveFolderName(fileName);
-                s3StorageService.uploadToS3(content, folderName + "/" + fileName, "objects");
-            } catch (IOException ignored) {}
-        }
+                if (!Files.exists(file)) continue;
 
-        athenaService.createOrUpdateTable(extractDirName);
+                String fileName = file.getFileName().toString();
+                String folderName = deriveFolderName(fileName);
+
+                // Upload to S3
+                try (InputStream input = Files.newInputStream(file)) {
+                    long size = Files.size(file);
+                    s3StorageService.uploadToS3(input, folderName + "/" + fileName, "objects", size);
+                }
+
+                // Create Athena table dynamically
+                athenaService.createOrUpdateTable(folderName, fileName);
+
+            } catch (IOException e) {
+                System.out.println("Failed to upload or create Athena table for: " + file);
+            }
+        }
     }
+
 
     private void uploadKeyFiles(List<Path> files, String extractDirName) {
         for (Path file : files) {
@@ -304,12 +348,5 @@ public class VaultApiService {
         headers.set("Authorization", sessionId);
         headers.setAccept(List.of());
         return headers;
-    }
-
-    private String inferExtractType(String filePartName) {
-        if (filePartName.contains("-F")) return "full_directdata";
-        if (filePartName.contains("-N")) return "incremental_directdata";
-        if (filePartName.contains("-L")) return "log_directdata";
-        return "unknown";
     }
 }

@@ -7,6 +7,25 @@ import org.springframework.context.annotation.Configuration;
 @Data
 @Configuration
 public class AwsS3Config {
+    public String getEncryptedAccessKey() {
+        return encryptedAccessKey;
+    }
+
+    public String getEncryptedSecretKey() {
+        return encryptedSecretKey;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public String getBucketName() {
+        return bucketName;
+    }
+
+    public String getAthenaOutputS3() {
+        return athenaOutputS3;
+    }
 
     @Value("${aws.access-key-encrypted}")
     private String encryptedAccessKey;
@@ -22,10 +41,4 @@ public class AwsS3Config {
 
     @Value("${aws.athena.output-s3}")
     private String athenaOutputS3;
-
-    private String glueServiceRoleArn;
-
-    public String getGlueServiceRoleArn() {
-        return glueServiceRoleArn;
-    }
 }
