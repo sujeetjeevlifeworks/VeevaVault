@@ -78,11 +78,11 @@ public class VaultApiService {
         return restTemplate.exchange(urlBuilder.toString(), HttpMethod.GET, entity, String.class).getBody();
     }
 
-    public byte[] downloadFile(String sessionId, String filePartName) throws IOException {
+    public void
+    downloadFile(String sessionId, String filePartName) throws IOException {
         String url = BASE_URL + "/services/directdata/files/" + filePartName;
         byte[] fileData = downloadWithRetries(url, sessionId);
         System.out.println("Starting download...");
-        System.out.println("Merging files...");
         System.out.println("Extracting archive...");
         System.out.println("Uploading to S3...");
         System.out.println("Done.");
@@ -108,7 +108,7 @@ public class VaultApiService {
 
         List<Path> extractedFiles = extractArchive(fileData, extractDir);
         uploadToS3(extractedFiles, extractDirName);
-        return fileData;
+        //return fileData;
     }
 
     private void deleteDirectoryRecursively(File dir) {
@@ -121,9 +121,7 @@ public class VaultApiService {
         dir.delete();
     }
 
-
-//new method is working for log and incrimental
-private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOException {
+    private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOException {
     List<Path> extractedFiles = new ArrayList<>();
     boolean extractionFailed = false;
 
@@ -328,7 +326,7 @@ private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOExc
                     return data;
                 }
             } catch (Exception e) {
-                retries--;
+
                 if (retries == 0) {
                     throw new IOException("Download failed after retries", e);
                 }
@@ -339,6 +337,7 @@ private List<Path> extractArchive(byte[] fileData, Path extractDir) throws IOExc
                     throw new IOException("Download interrupted", ie);
                 }
             }
+            retries--;
         }
         throw new IOException("Download failed");
     }

@@ -128,7 +128,7 @@ public class AthenaService {
             executeAthenaQuery(query);
             System.out.println(" Created Athena table: " + tableName);
         } else {
-            System.out.println("ℹ Athena table already exists: " + tableName);
+            System.out.println("Athena table already exists: " + tableName);
         }
     }
 

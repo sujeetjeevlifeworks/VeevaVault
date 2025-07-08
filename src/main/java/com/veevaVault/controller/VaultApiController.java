@@ -47,12 +47,12 @@ public class VaultApiController {
     public ResponseEntity<String> processAndUploadFile(@RequestParam String sessionId,
                                                        @RequestParam String fileName) {
         try {
-            vaultApiService.downloadFile(sessionId, fileName);  // ✅ Handles everything internally
-            return ResponseEntity.ok("✅ File processed and uploaded to S3.");
+            vaultApiService.downloadFile(sessionId, fileName);
+            return ResponseEntity.ok(" File processed and uploaded to S3.");
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("❌ Failed: " + e.getMessage());
+                    .body(" Failed: " + e.getMessage());
         }
     }
 }

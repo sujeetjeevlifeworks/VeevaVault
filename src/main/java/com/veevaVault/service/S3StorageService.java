@@ -13,6 +13,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import javax.crypto.Cipher;
@@ -25,9 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
+import java.util.*;
 import java.util.zip.GZIPInputStream;
 
 import org.slf4j.Logger;
@@ -77,20 +76,89 @@ public class S3StorageService {
     }
     public void uploadToS3(InputStream inputStream, String fileName, String extractType, long contentLength) {
         String s3Key = "objects/" + fileName;
+        File mergedFile = null;
 
         try {
+            // Step 1: Read new data into memory (or temp file)
+            File newTempFile = File.createTempFile("new_", ".csv");
+            try (OutputStream out = new FileOutputStream(newTempFile)) {
+                inputStream.transferTo(out);
+            }
+
+            // Step 2: Prepare map to hold merged data (by ID or first column)
+            Map<String, String> mergedRecords = new LinkedHashMap<>();
+            String headerLine;
+
+            // Step 3: Check if file already exists in S3
+            boolean fileExists = s3Client.listObjectsV2(b -> b.bucket(bucketName).prefix(s3Key))
+                    .contents()
+                    .stream()
+                    .anyMatch(obj -> obj.key().equals(s3Key));
+
+            if (fileExists) {
+                // Read existing file from S3
+                try (InputStream s3Stream = s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(s3Key).build());
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(s3Stream))) {
+
+                    headerLine = reader.readLine(); // header
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        String[] parts = line.split(",", -1);
+                        if (parts.length > 0) {
+                            mergedRecords.put(parts[0], line); // first column as key (e.g., ID)
+                        }
+                    }
+                }
+            } else {
+                // If file doesn't exist, use header from new file
+                try (BufferedReader reader = new BufferedReader(new FileReader(newTempFile))) {
+                    headerLine = reader.readLine();
+                }
+            }
+
+            // Step 4: Read new file and merge
+            try (BufferedReader reader = new BufferedReader(new FileReader(newTempFile))) {
+                String newHeader = reader.readLine(); // skip header
+                if (headerLine == null) headerLine = newHeader;
+
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split(",", -1);
+                    if (parts.length > 0) {
+                        mergedRecords.put(parts[0], line); // overwrite if ID matches
+                    }
+                }
+            }
+
+            // Step 5: Write merged content to temp file
+            mergedFile = File.createTempFile("merged_", ".csv");
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(mergedFile))) {
+                writer.write(headerLine);
+                writer.newLine();
+                for (String record : mergedRecords.values()) {
+                    writer.write(record);
+                    writer.newLine();
+                }
+            }
+
+            // Step 6: Upload merged file to S3
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(s3Key)
                     .build();
 
-            s3Client.putObject(putRequest, RequestBody.fromInputStream(inputStream, contentLength));
-            log.info(" Stream uploaded to S3: {}", s3Key);
+            s3Client.putObject(putRequest, RequestBody.fromFile(mergedFile));
+            log.info("Merged file uploaded to S3: {}", s3Key);
+
         } catch (Exception e) {
-            log.error(" Failed to upload stream to S3: {}", s3Key, e.getMessage());
+            log.error("Failed to upload or merge file to S3: {}", s3Key, e);
             throw new RuntimeException("S3 stream upload failed", e);
+        } finally {
+            // Clean up temp files
+            if (mergedFile != null) mergedFile.delete();
         }
     }
+
 
     public static String decrypt(String encrypted) {
         try {
