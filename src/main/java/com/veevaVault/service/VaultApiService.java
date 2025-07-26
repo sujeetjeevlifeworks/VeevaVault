@@ -21,7 +21,7 @@ public class VaultApiService {
 
     private final RestTemplate restTemplate;
     private final String BASE_URL = "https://partnersi-jeevlifeworks-safety.veevavault.com/api/v25.1";
-    private final Path BASE_DOWNLOAD_DIR = Paths.get("C:\\Users\\Administrator\\Desktop\\veeva vault");
+    private final Path BASE_DOWNLOAD_DIR = Paths.get("C:\\Users\\SUJEET\\Desktop\\veeva vault data");
 
     @Autowired
     private AthenaService athenaService;

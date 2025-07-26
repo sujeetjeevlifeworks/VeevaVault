@@ -79,58 +79,51 @@ public class S3StorageService {
         File mergedFile = null;
 
         try {
-            // Step 1: Read new data into memory (or temp file)
             File newTempFile = File.createTempFile("new_", ".csv");
             try (OutputStream out = new FileOutputStream(newTempFile)) {
                 inputStream.transferTo(out);
             }
 
-            // Step 2: Prepare map to hold merged data (by ID or first column)
             Map<String, String> mergedRecords = new LinkedHashMap<>();
             String headerLine;
 
-            // Step 3: Check if file already exists in S3
             boolean fileExists = s3Client.listObjectsV2(b -> b.bucket(bucketName).prefix(s3Key))
                     .contents()
                     .stream()
                     .anyMatch(obj -> obj.key().equals(s3Key));
 
             if (fileExists) {
-                // Read existing file from S3
                 try (InputStream s3Stream = s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(s3Key).build());
                      BufferedReader reader = new BufferedReader(new InputStreamReader(s3Stream))) {
 
-                    headerLine = reader.readLine(); // header
+                    headerLine = reader.readLine();
                     String line;
                     while ((line = reader.readLine()) != null) {
                         String[] parts = line.split(",", -1);
                         if (parts.length > 0) {
-                            mergedRecords.put(parts[0], line); // first column as key (e.g., ID)
+                            mergedRecords.put(parts[0], line);
                         }
                     }
                 }
             } else {
-                // If file doesn't exist, use header from new file
                 try (BufferedReader reader = new BufferedReader(new FileReader(newTempFile))) {
                     headerLine = reader.readLine();
                 }
             }
 
-            // Step 4: Read new file and merge
             try (BufferedReader reader = new BufferedReader(new FileReader(newTempFile))) {
-                String newHeader = reader.readLine(); // skip header
+                String newHeader = reader.readLine();
                 if (headerLine == null) headerLine = newHeader;
 
                 String line;
                 while ((line = reader.readLine()) != null) {
                     String[] parts = line.split(",", -1);
                     if (parts.length > 0) {
-                        mergedRecords.put(parts[0], line); // overwrite if ID matches
+                        mergedRecords.put(parts[0], line);
                     }
                 }
             }
 
-            // Step 5: Write merged content to temp file
             mergedFile = File.createTempFile("merged_", ".csv");
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(mergedFile))) {
                 writer.write(headerLine);
@@ -141,7 +134,6 @@ public class S3StorageService {
                 }
             }
 
-            // Step 6: Upload merged file to S3
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(s3Key)
